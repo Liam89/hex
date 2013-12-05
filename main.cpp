@@ -160,7 +160,7 @@ class Graph {
         T edge_between_nodes(int node1, int node2) {
             return graph[node1][node2];
         }
-        vector<int> get_neighbours(int node) { return neighbours[i]; }
+        vector<int> get_neighbours(int node) { return neighbours[node]; }
     protected:
         int num_nodes;
         T val_for_no_edge;
@@ -190,7 +190,7 @@ class HexGraph: private Graph<bool> {
         bool edge_between_cells(int row1, int col1, int row2, int col2) {
             return graph[row1*num_cols + col1][row2*num_cols + col2];
         }
-        vector<int> get_neighbours(int row, int col) { return get_neighbours(row*num_cols + col); }
+        vector<int> get_neighbours(int row, int col) { return Graph::get_neighbours(row*num_cols + col); }
         void gen();
     private:
         int num_cols, num_rows;
@@ -227,19 +227,26 @@ void HexGraph::gen() {
 
 class Board {
 public:
-    Board(int s) : board_size(s), board(s, vector<cell>(s, EMPTY)), graph(s,s), node_list(s*s) {
+    Board(int s) : board_size(s), board(s, vector<cell>(s, EMPTY)), graph(s,s), node_list(s*s), top_edge( horizontal_edge(0) ),
+                   right_edge( vertical_edge(s-1) ), bottom_edge( horizontal_edge(s-1) ), left_edge( vertical_edge(0) ) {
         graph.gen();
     }
     void play();
     void render();
 
 private:
-    int board_size; //length of row/column
+    const int board_size; //length of row/column
     vector< vector<cell> > board;   //cell is '.','R', or 'B'
     HexGraph graph;
-    vector<Player> players;
     NodeList node_list;
+    vector<Player> players;
     Player current_player;
+    //vectors containing the node_index of Nodes along edges of the board
+    vector<int> top_edge;
+    vector<int> right_edge;
+    vector<int> bottom_edge;
+    vector<int> left_edge;
+
 
     bool update_board(int row, int col);
     //execute players turn
@@ -248,6 +255,10 @@ private:
     void find_path_to(int final_node);
     void find_all_paths_from(int initial);
     bool winning_move(int row, int col, int player_num);
+    //helpers for edges constructor
+    vector<int> horizontal_edge(int col);
+    vector<int> vertical_edge(int row);
+    //determines whether there's a path between opposite edges
     bool horizontal_path();
     bool vertical_path();
     int ai_move(int player_num);
@@ -310,12 +321,18 @@ void Board::play() {
     cout << "Enter name of Player 1 (B), type \"AI\" for AI" << endl;
     cin >> name;
     players.push_back(Player(name, BLUE));
-    if (players[0].name == "AI") players[0].AI = true;
+    if (players[0].name == "AI") {
+        players[0].AI = true;
+        players[0].name = "B (AI)";
+    }
     cout << "Enter name of Player 2 (R), type \"AI\" for AI" << endl;
     cin >> name;
     cout << endl;
     players.push_back(Player(name, RED));
-    if (players[1].name == "AI") players[1].AI = true;
+    if (players[1].name == "AI") {
+        players[1].AI = true;
+        players[1].name = "R (AI)";
+    }
     //start game with blue's turn
     turn(0);
 }
@@ -384,14 +401,28 @@ bool Board::winning_move(int row, int col, int player_num) {
         return horizontal_path();
     return vertical_path();
 }
+//col = 0 for left edge, col = board_size - 1 for right edge
+vector<int> Board::vertical_edge(int col) {
+    vector<int> nodes;
+    for (int row = 0; row < board_size; ++row) {
+        nodes.push_back(row*board_size + col);
+    }
+    return nodes;
+}
+//row = 0 for top edge, row = board_size - 1 for bottom edge
+vector<int> Board::horizontal_edge(int row) {
+    vector<int> nodes;
+    for (int col = 0; col < board_size; ++col) {
+        nodes.push_back(row*board_size + col);
+    }
+    return nodes;
+}
 
 //Check whether path reaches nodes at opposite edges of board. i.e. whether there's a horizontal path
 bool Board::horizontal_path() {
-    int col = 0, node;
     bool found_left = false;
     //Check whether path was found to left-most col of board
-    for(int row = 0; row < board_size; ++row) {
-        node = row*board_size + col;
+    for(int node : left_edge) {
         if (node_list.set_type(node) == CLOSED) {
             found_left = true;
             break;
@@ -399,21 +430,19 @@ bool Board::horizontal_path() {
     }
     if (!found_left) return false;
     //If path to left node found, check for path to right-most col
-    col = board_size - 1;
-    for(int row = 0; row < board_size; ++row) {
-        node = row*board_size + col;
+    for(int node : right_edge) {
         if (node_list.set_type(node) == CLOSED) return true;
     }
     return false;
 
 }
+
+
 //check whether path reaches nodes at opposite edges of board. i.e. whether there's a vertical path
 bool Board::vertical_path() {
-    int row = 0,node;
     bool found_top = false;
     //check whether path was found to left-most col of board
-    for(int col = 0; col < board_size; ++col) {
-        node = row*board_size + col;
+    for(int node : top_edge) {
         if (node_list.set_type(node) == CLOSED) {
             found_top = true;
             break;
@@ -421,9 +450,7 @@ bool Board::vertical_path() {
     }
     if(!found_top) return false;
     //if path to left node found, check for path to right-most col
-    row = board_size - 1;
-    for(int col = 0; col < board_size; ++col){
-        node = row*board_size + col;
+    for(int node : bottom_edge){
         if(node_list.set_type(node) == CLOSED) return true;
     }
     return false;
@@ -478,7 +505,7 @@ void Board::find_all_paths_from(int initial) {
 }
 
 //monte carlo ai
-int Board::ai_move(int player_num) {
+int Board::ai_move(int player_num) { //TODO: alpha/beta pruning
     vector<int> possible_moves_orig; //possible moves identified by Node index
     vector<int> num_wins(board_size*board_size,0);
     for(int row=0; row < board_size; ++row){
@@ -496,25 +523,35 @@ int Board::ai_move(int player_num) {
         for(unsigned k = 0; k < (possible_moves_copy.size()+1)/2; ++k){
             int row = possible_moves_copy[k]/board_size, col = possible_moves_copy[k] % board_size;
             board[row][col]=current_player.color;
-            if( (win = winning_move(row,col,player_num)) ){
-                num_wins[first_move]++;
-                //undo moves
-                for(unsigned j = 0; j<k+1; ++j){
-                    row = possible_moves_copy[j]/board_size;
-                    col = possible_moves_copy[j] % board_size;
-                    board[row][col]=EMPTY;
+        }
+        //check whether winning move
+        if (player_num == 0){
+            //check for horizonal path
+            for(int node : left_edge){
+                find_all_paths_from(node);
+                if (horizontal_path()){
+                    num_wins[first_move]++;
+                    break;
                 }
-                break;
+            }
+        } else {
+            //check for vertical path
+            for(int node : top_edge){
+                find_all_paths_from(node);
+                if (vertical_path()){
+                    num_wins[first_move]++;
+                    break;
+                }
             }
         }
-        if(!win){
-            for(unsigned j = 0; j<(possible_moves_copy.size()+1)/2; ++j){
-                int row = possible_moves_copy[j]/board_size;
-                int col = possible_moves_copy[j] % board_size;
-                board[row][col]=EMPTY;
-            }
+        //undo moves
+        for(unsigned j = 0; j<(possible_moves_copy.size()+1)/2; ++j){
+            int row = possible_moves_copy[j]/board_size;
+            int col = possible_moves_copy[j] % board_size;
+            board[row][col]=EMPTY;
         }
     }
+    //return best move
     int max_el = static_cast<int>(max_element(num_wins.begin(),num_wins.end()) - num_wins.begin());
     return max_el;
 }
