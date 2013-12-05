@@ -122,7 +122,9 @@ class NodeList {
 Node* NodeList::get_min_from_open_set() {
     //get min Node in open set
     Node tmp_min(0,0);
-    set<Node*>::iterator min_node_it = open_set.lower_bound(&tmp_min); //no negative weighted edges so returns iterator to min element
+    set<Node*>::iterator min_node_it = open_set.begin();
+    assert(open_set.begin() != open_set.end());
+    assert(open_set.begin() == open_set.lower_bound(&tmp_min)); //assumes no negative weighted edges
     Node* min_node = *min_node_it;
     //move from open to closed set
     min_node->set_type = CLOSED;
@@ -158,6 +160,7 @@ class Graph {
         T edge_between_nodes(int node1, int node2) {
             return graph[node1][node2];
         }
+        vector<int> get_neighbours(int node) { return neighbours[i]; }
     protected:
         int num_nodes;
         T val_for_no_edge;
@@ -187,6 +190,7 @@ class HexGraph: private Graph<bool> {
         bool edge_between_cells(int row1, int col1, int row2, int col2) {
             return graph[row1*num_cols + col1][row2*num_cols + col2];
         }
+        vector<int> get_neighbours(int row, int col) { return get_neighbours(row*num_cols + col); }
         void gen();
     private:
         int num_cols, num_rows;
@@ -325,7 +329,13 @@ void Board::turn(int player_num) {
         cout << "\n" << current_player.name << "'s turn." << endl;
         render();
         cout << "\n" << current_player.name << "'s thinking." << endl;
+        //TODO: remove timing
+        clock_t t1,t2;
+        t1=clock();
         int node = ai_move(player_num);
+        t2=clock();
+        float diff=((float)t2-(float)t1)/CLOCKS_PER_SEC;
+        cout<<"time="<<diff<<endl;
         row = node/board_size;
         col = node % board_size;
         //checks whether move's valid and continues play
@@ -424,10 +434,11 @@ bool Board::vertical_path() {
 //function to add neighbours of node i to the open set, helper function for find_path_to()
 void Board::add_neighbours_to_open_set(int i){
     int col1 = i % board_size, row1 = i / board_size;
-    for(int j = 0; j < board_size * board_size; ++j){ //loop over nodes in graph to find edges //TODO: change to +-1
+    for (int j : graph.get_neighbours(row1,col1) ) {
         int col2 = j % board_size, row2 = j / board_size;
-        if( graph.edge_between_cells(row1, col1, row2, col2) && (node_list.set_type(j) != CLOSED) && (board[row2][col2] == current_player.color) ){
-            double dist = node_list.get_distance(i) + 1; //not currently needed but kept incase needed for next homework
+        assert(graph.edge_between_cells(row1, col1, row2, col2));
+        if( (node_list.set_type(j) != CLOSED) && (board[row2][col2] == current_player.color) ){
+            double dist = node_list.get_distance(i) + 1;
             //update/add node (row,col) to open set
             node_list.add_node_to_open_set(j, i, dist);
         }
@@ -476,19 +487,19 @@ int Board::ai_move(int player_num) {
         }
     }
     //perform monte carlo ~1000 times per possible move
-    for(int i = 0; i < 1000*possible_moves_orig.size(); ++i) {
+    for(unsigned i = 0; i < 1000*possible_moves_orig.size(); ++i) {
         vector<int> possible_moves_copy = possible_moves_orig;
         bool win=false;
         random_shuffle ( possible_moves_copy.begin(), possible_moves_copy.end() );
         int first_move = possible_moves_copy[0];
         //perform the current ai's moves randomly, don't need to actually make other players moves
-        for(int k = 0; k < (possible_moves_copy.size()+1)/2; ++k){
+        for(unsigned k = 0; k < (possible_moves_copy.size()+1)/2; ++k){
             int row = possible_moves_copy[k]/board_size, col = possible_moves_copy[k] % board_size;
             board[row][col]=current_player.color;
             if( (win = winning_move(row,col,player_num)) ){
                 num_wins[first_move]++;
                 //undo moves
-                for(int j = 0; j<k+1; ++j){
+                for(unsigned j = 0; j<k+1; ++j){
                     row = possible_moves_copy[j]/board_size;
                     col = possible_moves_copy[j] % board_size;
                     board[row][col]=EMPTY;
@@ -497,7 +508,7 @@ int Board::ai_move(int player_num) {
             }
         }
         if(!win){
-            for(int j = 0; j<(possible_moves_copy.size()+1)/2; ++j){
+            for(unsigned j = 0; j<(possible_moves_copy.size()+1)/2; ++j){
                 int row = possible_moves_copy[j]/board_size;
                 int col = possible_moves_copy[j] % board_size;
                 board[row][col]=EMPTY;
